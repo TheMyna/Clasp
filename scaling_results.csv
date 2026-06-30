@@ -1,0 +1,16 @@
+study,n,B,eta_min,total_comm_MB,comm_bottleneck,bottleneck_share
+input_size,1000,100,30,11.3788,H1->S ciphertexts,0.6425985165395296
+input_size,10000,100,30,36.1198,H1->S ciphertexts,0.657921693918571
+input_size,100000,100,30,283.5298,H1->S ciphertexts,0.6640712898608894
+input_size,1000000,100,30,2757.6298,H1->S ciphertexts,0.6648767720743372
+input_size,10000000,100,30,27498.6298,H1->S ciphertexts,0.6649598228345182
+segments,100000,1,30,274.986298,H1->S ciphertexts,
+segments,100000,10,30,275.76298,H1->S ciphertexts,
+segments,100000,100,30,283.5298,H1->S ciphertexts,
+segments,100000,1000,30,361.198,H1->S ciphertexts,
+segments,100000,10000,30,1137.88,H1->S ciphertexts,
+sentinels,100000,100,0,275.2828,,
+sentinels,100000,100,10,278.0318,,
+sentinels,100000,100,30,283.5298,,
+sentinels,100000,100,100,302.7728,,
+sentinels,100000,100,300,357.7528,,
