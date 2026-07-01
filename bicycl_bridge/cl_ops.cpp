@@ -50,4 +50,14 @@ struct ClContext {
     std::string cleartext_bound() const {
         return mpz_to_dec(C->cleartext_bound());
     }
+    // Non-re-randomizing add (fixed r = 0): bare nucomp composition, ~us.
+    // Safe for accumulating partial sums that are never revealed; the final
+    // ciphertext is re-randomized once by the caller.
+    std::shared_ptr<CL_HSMqk::CipherText> add_norand(
+            const std::shared_ptr<CL_HSMqk::CipherText> &a,
+            const std::shared_ptr<CL_HSMqk::CipherText> &b) {
+        Mpz zero(0UL);
+        return std::make_shared<CL_HSMqk::CipherText>(
+            C->add_ciphertexts(*pk, *a, *b, zero));
+    }
 };

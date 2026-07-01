@@ -133,6 +133,10 @@ class PaillierTAHE(ThresholdAHE):
     def add(self, c1, c2):
         return (c1 * c2) % self.N2
 
+    def add_fast(self, c1, c2):
+        # Paillier add does not re-randomize; alias of add
+        return (c1 * c2) % self.N2
+
     def scalar_mul(self, a: int, c):
         return pow(c, a % self.N, self.N2)
 

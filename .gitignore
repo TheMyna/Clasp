@@ -1,1 +1,4 @@
 bicycl/
+bicycl_bridge/*.so
+impl/clasp/__pycache__/
+**/__pycache__/

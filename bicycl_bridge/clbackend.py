@@ -30,7 +30,13 @@ class BICYCLBackend:
         return self.ctx.enc(str(int(m) % self._q))
 
     def add(self, c1, c2):
+        # re-randomizing add (fresh r): use for the final released ciphertext
         return self.ctx.add(c1, c2)
+
+    def add_fast(self, c1, c2):
+        # non-re-randomizing add (bare composition): use for partial sums that
+        # are never revealed; caller re-randomizes the final ciphertext once
+        return self.ctx.add_norand(c1, c2)
 
     def scalar_mul(self, a: int, c):
         return self.ctx.scal(c, str(int(a) % self._q))

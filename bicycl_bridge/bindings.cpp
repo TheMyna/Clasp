@@ -12,5 +12,6 @@ PYBIND11_MODULE(clbicycl, m) {
         .def("add",  &ClContext::add)
         .def("scal", &ClContext::scal)
         .def("dec",  &ClContext::dec)
-        .def("cleartext_bound", &ClContext::cleartext_bound);
+        .def("cleartext_bound", &ClContext::cleartext_bound)
+        .def("add_norand", &ClContext::add_norand);
 }

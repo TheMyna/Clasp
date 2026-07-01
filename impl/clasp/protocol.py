@@ -121,20 +121,23 @@ class Clasp:
             # residue R_b = 2^L (+) sum of matched -g   [scalar-mul then add]
             R = self.ahe.enc(0)
             for _, negc in matched:
-                R = self.ahe.add(R, negc)
+                R = self.ahe.add_fast(R, negc)
             R = self.ahe.scalar_mul(lift, R)
             s_ct = self.ahe.enc(0); as_ct = self.ahe.enc(0)
             c_ct = self.ahe.enc(0); ac_ct = self.ahe.enc(0)
             for t, _ in matched:
                 _, sump, macp, cntp, alp = h1_by_tag[t]
-                s_ct = self.ahe.add(s_ct, sump)
-                as_ct = self.ahe.add(as_ct, macp)
-                c_ct = self.ahe.add(c_ct, cntp)
-                ac_ct = self.ahe.add(ac_ct, alp)
-            s_ct = self.ahe.refresh(self.ahe.add(s_ct, R))
-            c_ct = self.ahe.refresh(self.ahe.add(c_ct, R))
-            out[b] = (s_ct, self.ahe.refresh(as_ct),
-                      c_ct, self.ahe.refresh(ac_ct))
+                s_ct = self.ahe.add_fast(s_ct, sump)
+                as_ct = self.ahe.add_fast(as_ct, macp)
+                c_ct = self.ahe.add_fast(c_ct, cntp)
+                ac_ct = self.ahe.add_fast(ac_ct, alp)
+            # add_ciphertexts already re-randomizes (samples fresh r from
+            # encrypt_randomness_bound), so no separate refresh is needed.
+            s_ct = self.ahe.add_fast(s_ct, R)
+            c_ct = self.ahe.add_fast(c_ct, R)
+            # re-randomize each released ciphertext exactly once
+            out[b] = (self.ahe.refresh(s_ct), self.ahe.refresh(as_ct),
+                      self.ahe.refresh(c_ct), self.ahe.refresh(ac_ct))
         self.t.aggregate += time.perf_counter() - s
         return out
 
