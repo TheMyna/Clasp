@@ -147,7 +147,7 @@ def study_sentinels(rows_out):
           "most. Surface\nthis tension in the paper rather than hiding it.")
 
 
-ddef operation_profile():
+def operation_profile():
     banner("OPERATION COUNTS at n = %d, B = %d (which op is most numerous)"
            % (config.SWEEP_FIXED_N, config.SWEEP_SEGMENTS_FIXED))
     p = make_params(config.SWEEP_FIXED_N, config.SWEEP_FIXED_N,
