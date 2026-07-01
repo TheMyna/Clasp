@@ -67,7 +67,8 @@ def main():
         # bands sized for a 256-bit field: L + log2(G) + log2(N) < 256
         L, G = 128, 2 ** 80
         print("[backend: real class-group CL-HSMqk at 128-bit; "
-              "single-key decrypt placeholder, malicious proofs stubbed]\n")
+              "real 2-of-2 threshold decryption with verified proofs; "
+              "DOPRF/commitment DLEQ proofs still stubbed]\n")
     else:
         group_q = 2 ** 256 - 189               # 256-bit-ish prime field
         ahe = PaillierTAHE(args.key_bits)

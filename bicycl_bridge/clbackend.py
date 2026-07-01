@@ -1,8 +1,7 @@
 # GPL-3.0-or-later. Links BICYCL via clbicycl (see NOTICE).
 # Stage-one CLASP CL backend: real class-group enc/add/scal/dec.
-# [STAGE-ONE LIMIT] Single keypair, so part_dec/fin_dec wrap single-key
-# decrypt as a placeholder. Stage two binds CL_Threshold_Static for the
-# real 2-of-2 threshold decryption with proofs.
+# Stage two: real 2-of-2 threshold via CL_Threshold_Static (IACR 2024/717),
+# distributed keygen with VSS and threshold decryption with verified proofs.
 import clbicycl
 
 
@@ -16,7 +15,7 @@ class BICYCLBackend:
     so the accumulated payload never crosses q.
     """
     def __init__(self, sec_bits: int = 128, q: int = None):
-        self.ctx = clbicycl.ClContext(sec_bits)
+        self.ctx = clbicycl.ThresholdContext(sec_bits)
         # q is the CL field order. If not supplied, use the measured 256-bit
         # bound; the protocol must pass the exact q so band checks are correct.
         # read the true CL field bound from the context
@@ -45,10 +44,12 @@ class BICYCLBackend:
         return self.ctx.add(c, self.ctx.enc("0"))
 
     def part_dec(self, share_id: int, c):
-        # [STAGE-ONE PLACEHOLDER] no real threshold yet.
+        # Real 2-of-2 threshold runs inside ThresholdContext; carry the
+        # ciphertext through so fin_dec can invoke threshold_dec once.
         return (share_id, c)
 
     def fin_dec(self, c, partials):
-        # [STAGE-ONE PLACEHOLDER] single-key decrypt via the context.
+        # Real threshold decryption: both players' partials + verified DLEQ
+        # proofs, via CL_Threshold_Static (IACR 2024/717).
         _, ct = partials[0]
-        return int(self.ctx.dec(ct))
+        return int(self.ctx.threshold_dec(ct))

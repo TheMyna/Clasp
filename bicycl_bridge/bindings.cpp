@@ -14,4 +14,13 @@ PYBIND11_MODULE(clbicycl, m) {
         .def("dec",  &ClContext::dec)
         .def("cleartext_bound", &ClContext::cleartext_bound)
         .def("add_norand", &ClContext::add_norand);
+
+    py::class_<ThresholdContext>(m, "ThresholdContext")
+        .def(py::init<int>(), py::arg("sec_bits") = 128)
+        .def("enc",             &ThresholdContext::enc)
+        .def("add",             &ThresholdContext::add)
+        .def("add_norand",      &ThresholdContext::add_norand)
+        .def("scal",            &ThresholdContext::scal)
+        .def("cleartext_bound", &ThresholdContext::cleartext_bound)
+        .def("threshold_dec",   &ThresholdContext::threshold_dec);
 }
