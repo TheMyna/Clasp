@@ -28,11 +28,12 @@ CPU_USD_PER_HOUR = 0.01
 
 # --- Unit timings, seconds. None = NOT MEASURED; needs the BICYCL harness. ---
 # Leave as None and the study skips absolute time (counts stay reliable).
-SEC_PER_CL_ENC = None
-SEC_PER_CL_ADD = None
-SEC_PER_SCALAR_MULT = None
-SEC_PER_THRESHOLD_DEC = None
-SEC_PER_DOPRF_EVAL = None
+SEC_PER_CL_ENC = 0.00457          # 4.57 ms, BICYCL CL-HSMqk 128-bit, none variant
+SEC_PER_CL_ADD = 0.00000885       # 8.85 us, nucomp (class-group composition)
+SEC_PER_THRESHOLD_DEC = 0.01061   # 10.61 ms, decrypt
+
+SEC_PER_SCALAR_MULT = 0.0    # not benchmarked; excluded from total
+SEC_PER_DOPRF_EVAL = 0.0     # different library; excluded from total
 
 # --- Sweep ranges the study drives itself ---
 SWEEP_SET_SIZES = [1000, 10000, 100000, 1000000, 10000000]
