@@ -1,0 +1,9 @@
+This directory (bicycl_bridge) links against BICYCL
+(https://gite.lirmm.fr/crypto/bicycl), which is licensed under GPL-3.0-or-later.
+Because it links BICYCL, this bridge is also distributed under GPL-3.0-or-later.
+
+BICYCL: C. Bouvier, G. Castagnos, L. Imbert, F. Laguillaumie.
+The threshold class-group scheme bound here implements IACR ePrint 2024/717.
+
+Files in this directory are authored for the CLASP project and are
+GPL-3.0-or-later by virtue of linking BICYCL.
