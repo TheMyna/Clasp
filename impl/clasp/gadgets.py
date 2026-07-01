@@ -21,6 +21,35 @@ from dataclasses import dataclass
 from .crypto import Group
 
 
+
+# --------------------------------------------------------------------------
+# Chaum-Pedersen DLEQ over the prime-order group (Fiat-Shamir).
+# Proves log_{base1}(pub1) == log_{base2}(pub2) in zero knowledge of x.
+# --------------------------------------------------------------------------
+
+def _dleq_challenge(group, *elems):
+    h = hashlib.sha256()
+    for e in elems:
+        h.update(str(e).encode())
+    return int.from_bytes(h.digest(), "big") % group.q
+
+
+def dleq_prove(group, base1, pub1, base2, pub2, x):
+    g = group
+    r = g.rand_exp()
+    A1 = g.exp(base1, r); A2 = g.exp(base2, r)
+    c = _dleq_challenge(g, base1, pub1, base2, pub2, A1, A2)
+    z = (r + c * x) % g.q
+    return (c, z)
+
+
+def dleq_verify(group, base1, pub1, base2, pub2, proof):
+    g = group
+    c, z = proof
+    A1 = g.mul(g.exp(base1, z), g.exp(g.inv(pub1), c))
+    A2 = g.mul(g.exp(base2, z), g.exp(g.inv(pub2), c))
+    return _dleq_challenge(g, base1, pub1, base2, pub2, A1, A2) == c
+
 # --------------------------------------------------------------------------
 # Distributed OPRF
 # --------------------------------------------------------------------------
@@ -30,24 +59,34 @@ class DOPRF:
     group: Group
     k1: int      # holder 1 share
     k2: int      # holder 2 share
+    K1: int = None   # g^k1, public commitment to share 1
+    K2: int = None   # g^k2, public commitment to share 2
 
     @classmethod
     def share(cls, group: Group) -> "DOPRF":
-        return cls(group=group, k1=group.rand_exp(), k2=group.rand_exp())
+        k1 = group.rand_exp(); k2 = group.rand_exp()
+        return cls(group=group, k1=k1, k2=k2,
+                   K1=group.exp(group.g, k1), K2=group.exp(group.g, k2))
 
     def _base(self, idb: bytes) -> int:
         return self.group.hash_to_group(b"OPRF" + idb)
 
-    def eval(self, idb: bytes, my_share: int, partner_share: int) -> int:
+    def eval(self, idb: bytes, my_share: int, partner_share: int,
+             partner_pub: int) -> int:
         """Holder with `my_share` evaluates F_k on its own id; partner applies
-        `partner_share` but sees only a blinded (random) element."""
+        `partner_share` and proves it used the committed share (DLEQ), seeing
+        only a blinded random element."""
         g = self.group
         hx = self._base(idb)
         b = g.rand_exp()
         blinded = g.exp(hx, b)                 # sent to partner (looks random)
-        # --- partner side ---
-        resp = g.exp(blinded, partner_share)   # [STUB: + DLEQ proof here]
-        # --- back on my side ---
+        # --- partner side: apply share and PROVE consistency with partner_pub ---
+        resp = g.exp(blinded, partner_share)
+        proof = dleq_prove(g, g.g, partner_pub, blinded, resp, partner_share)
+        # --- back on my side: VERIFY before using (abort on failure) ---
+        if not dleq_verify(g, g.g, partner_pub, blinded, resp, proof):
+            raise ValueError("DOPRF consistency proof failed: partner did not "
+                             "use its committed key share")
         binv = pow(b, -1, g.q)
         partner_part = g.exp(resp, binv)       # hx^partner_share
         my_part = g.exp(hx, my_share)          # hx^my_share
@@ -67,43 +106,68 @@ def _leaf(group: Group, h2: int, A_id: int) -> tuple[int, int]:
     return (group.exp(group.g, s), group.mul(A_id, group.exp(h2, s)))  # (g^s, A*h2^s)
 
 
-def _merkle_root(leaves: list[bytes]) -> bytes:
-    nodes = sorted(leaves)
-    if not nodes:
-        return hashlib.sha256(b"empty").digest()
+def _merkle_layers(leaves):
+    """leaves: sorted list of leaf-hash bytes. Returns layers; last is [root]."""
+    layers = [leaves]
+    nodes = leaves
     while len(nodes) > 1:
         nxt = []
         for i in range(0, len(nodes), 2):
             a = nodes[i]
             b = nodes[i + 1] if i + 1 < len(nodes) else nodes[i]
             nxt.append(hashlib.sha256(a + b).digest())
+        layers.append(nxt)
         nodes = nxt
-    return nodes[0]
+    return layers
+
+
+def _merkle_path(layers, index):
+    path, idx = [], index
+    for layer in layers[:-1]:
+        if idx % 2 == 0:
+            sib = layer[idx + 1] if idx + 1 < len(layer) else layer[idx]
+            path.append((sib, 0))
+        else:
+            path.append((layer[idx - 1], 1))
+        idx //= 2
+    return path
+
+
+def _merkle_verify(leaf, path, root):
+    h = leaf
+    for sib, self_is_left in path:
+        h = hashlib.sha256(h + sib).digest() if self_is_left == 0 \
+            else hashlib.sha256(sib + h).digest()
+    return h == root
 
 
 @dataclass
 class SetCommit:
-    group: Group
-    h2: int
+    """Commit-to-the-tag set commitment. The leaf is H(tag); the Merkle root
+    binds the holder to its epoch tag set. Membership is a real Merkle path,
+    verified by the aggregator (which already sees the tags), so a holder
+    cannot present a tag outside its committed set. [Replaces the earlier
+    ElGamal-leaf / ZK-in-tag design; see the back:commit paragraph.]"""
+    group: object = None    # kept for interface compatibility; unused here
 
-    def commit(self, ids: list[bytes]):
-        leaves, ser = [], []
-        for idb in ids:
-            A = self.group.hash_to_group(b"OPRF" + idb)   # same base as DOPRF
-            leaf = _leaf(self.group, self.h2, A)
-            leaves.append(leaf)
-            ser.append(hashlib.sha256(f"{leaf[0]},{leaf[1]}".encode()).digest())
-        root = _merkle_root(ser)
-        return root, {"leaves": leaves, "ser": ser}
+    def commit(self, tags):
+        leaf_of = {t: hashlib.sha256(t).digest() for t in tags}
+        leaves = sorted(leaf_of.values())
+        layers = _merkle_layers(leaves)
+        return layers[-1][0], {"layers": layers, "leaves": leaves,
+                               "leaf_of": leaf_of}
 
-    def prove(self, aux, idx: int):
-        # [STUB: returns leaf + ZK placeholder; real system adds Merkle path
-        # and a DLEQ proof linking the leaf to the evaluated tag in ZK.]
-        return {"leaf": aux["leaves"][idx], "zk": "STUB_OK"}
+    def prove(self, aux, tag):
+        leaf = aux["leaf_of"].get(tag)
+        if leaf is None:
+            return None
+        idx = aux["leaves"].index(leaf)
+        return {"leaf": leaf, "path": _merkle_path(aux["layers"], idx)}
 
-    def vrfy(self, root, proof) -> bool:
-        # Merkle membership is what correctness needs; ZK is stubbed.
-        return proof.get("zk") == "STUB_OK"
+    def vrfy(self, root, tag, proof):
+        if proof is None or proof["leaf"] != hashlib.sha256(tag).digest():
+            return False
+        return _merkle_verify(proof["leaf"], proof["path"], root)
 
 
 # --------------------------------------------------------------------------
