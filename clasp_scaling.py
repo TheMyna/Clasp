@@ -147,7 +147,7 @@ def study_sentinels(rows_out):
           "most. Surface\nthis tension in the paper rather than hiding it.")
 
 
-def operation_profile():
+ddef operation_profile():
     banner("OPERATION COUNTS at n = %d, B = %d (which op is most numerous)"
            % (config.SWEEP_FIXED_N, config.SWEEP_SEGMENTS_FIXED))
     p = make_params(config.SWEEP_FIXED_N, config.SWEEP_FIXED_N,
@@ -159,9 +159,20 @@ def operation_profile():
     if secs is None:
         print("\n  Predicted seconds: withheld (timings unmeasured).")
     else:
+        # Name any operation whose unit timing is 0.0, i.e. excluded because
+        # it was not benchmarked, so the total is never read as complete.
+        excluded = []
+        if not config.SEC_PER_SCALAR_MULT:
+            excluded.append("scalar-mult")
+        if not config.SEC_PER_DOPRF_EVAL:
+            excluded.append("DOPRF")
+        note = ""
+        if excluded:
+            note = "  [excludes %s (unmeasured)]" % ", ".join(excluded)
         name, val, share = bottleneck(secs)
-        print("\n  Predicted CPU-seconds total: %.2f" % sum(secs.values()))
-        print("  Time bottleneck: %s (%.1f%% of CPU time)" %
+        print("\n  Predicted single-core CPU-seconds: %.2f%s"
+              % (sum(secs.values()), note))
+        print("  Time bottleneck: %s (%.1f%% of counted CPU time)" %
               (name, share * 100))
 
 
@@ -190,4 +201,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main()  
