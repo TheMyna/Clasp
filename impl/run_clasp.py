@@ -35,6 +35,45 @@ def gen_data(n, B, overlap, rho_max, scenario):
     return U1_vals, U2_seg, {b: tuple(v) for b, v in gt.items()}
 
 
+def forge_demonstrations(proto, U1_vals):
+    """Show the malicious-security proofs reject forgery end-to-end."""
+    import secrets as _s
+    from clasp.gadgets import oprf_base
+    g = proto.g
+
+    # (1) DOPRF consistency: partner claims a key share other than committed.
+    some_id = next(iter(U1_vals))
+    try:
+        proto.doprf.eval(some_id, proto.doprf.k1, proto.doprf.k2, proto.doprf.K1)
+        d = "MISSED"
+    except ValueError:
+        d = "caught"
+    print("FORGE (DOPRF consistency, mismatched key share) ->", d)
+
+    # (2) inject a tag on a NON-committed id: blinded on A' != committed A.
+    real_id = next(iter(U1_vals))
+    outsider = b"NOT_A_MEMBER_" + _s.token_bytes(6)
+    Ap = oprf_base(g, outsider); b = g.rand_exp(); blinded_bad = g.exp(Ap, b)
+    proof = proto.sc.prove(proto.aux1, real_id, b, blinded_bad)
+    caught = (proof is None) or (not proto.sc.vrfy(proto.com1, blinded_bad, proof))
+    print("FORGE (inject non-committed id, linkage) ->",
+          "caught" if caught else "MISSED")
+
+    # (3) outsider has no committed leaf at all.
+    none_proof = proto.sc.prove(proto.aux1, outsider, b, blinded_bad)
+    print("FORGE (outsider has no committed leaf) ->",
+          "caught" if none_proof is None else "MISSED")
+
+    # (4) tamper the Merkle path of an honest proof.
+    tag, A, bb, blinded = proto.doprf.eval(real_id, proto.doprf.k1,
+                                           proto.doprf.k2, proto.doprf.K2)
+    good = proto.sc.prove(proto.aux1, real_id, bb, blinded)
+    bad = dict(good)
+    bad["path"] = [(_s.token_bytes(32), sdir) for (_, sdir) in good["path"]]
+    print("FORGE (tampered Merkle path) ->",
+          "caught" if not proto.sc.vrfy(proto.com1, blinded, bad) else "MISSED")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=200)
@@ -67,8 +106,8 @@ def main():
         # bands sized for a 256-bit field: L + log2(G) + log2(N) < 256
         L, G = 128, 2 ** 80
         print("[backend: real class-group CL-HSMqk at 128-bit; real 2-of-2 "
-              "threshold decryption, DOPRF consistency proof, and "
-              "commit-to-the-tag membership all verified]\n")
+              "threshold decryption, DOPRF consistency (DLEQ), and "
+              "commit-to-A_id membership+linkage, all verified]\n")
     else:
         group_q = 2 ** 256 - 189               # 256-bit-ish prime field
         ahe = PaillierTAHE(args.key_bits)
@@ -111,6 +150,8 @@ def main():
     _, ab = proto2.release({b0: forged})
     print(f"TAMPER TEST: forged sum in segment {b0} -> "
           f"{'caught (' + ab.get(b0, 'MISSED') + ')' if ab.get(b0) else 'MISSED'}")
+
+    forge_demonstrations(proto, U1_vals)
 
     # ---- timing ----
     print("\nper-phase wall-clock (s):")

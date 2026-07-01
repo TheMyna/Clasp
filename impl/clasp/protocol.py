@@ -41,20 +41,13 @@ class Clasp:
         self.p = params
         self.t = Timings()
 
-    def _epoch_tag(self, idb):
-        """Deterministic epoch tag t = H(id)^(k1+k2), computed directly.
-        The holder is entitled to its own tag set; used to commit at Setup and
-        matches the two-party eval produced during Tag."""
-        elt = self.g.exp(self.doprf._base(idb), (self.doprf.k1 + self.doprf.k2))
-        return tag_bytes(elt)
-
     # ---- Phase 1: Setup (once per epoch) --------------------------------
     def setup(self, U1_ids, U2_seg, B):
         s = time.perf_counter()
         self.B = B
         self.doprf = DOPRF.share(self.g)
         self.h2 = self.g.exp(self.g.g, self.g.rand_exp())     # 2nd generator
-        self.sc = SetCommit(self.g)
+        self.sc = SetCommit(self.g, self.h2)   # h2 = hbar
         self.alpha = 1 + secrets.randbelow(self.p.q - 1)
         self.kappa = secrets.token_bytes(16)
         # server-cardinality DP: draw sentinel count per segment, plant in both
@@ -63,21 +56,22 @@ class Clasp:
         for b in range(1, B + 1):
             self.eta[b] = self.p.eta_min + geometric_ge0(self.p.eps_srv)
             self.sentinels[b] = [secrets.token_bytes(8) for _ in range(self.eta[b])]
-        # commit-to-the-tag: commit to each holder's epoch tag set, which is
-        # the real ids PLUS the planted sentinels (both get tagged and uploaded)
-        h1_ids = list(U1_ids) + [sid for b in self.sentinels
-                                 for sid in self.sentinels[b]]
-        h2_ids = list(U2_seg.keys()) + [sid for b in self.sentinels
-                                        for sid in self.sentinels[b]]
-        self.com1, self.aux1 = self.sc.commit([self._epoch_tag(i) for i in h1_ids])
-        self.com2, self.aux2 = self.sc.commit([self._epoch_tag(i) for i in h2_ids])
+        h1_ids = list(U1_ids) + [sid for b in self.sentinels for sid in self.sentinels[b]]
+        h2_ids = list(U2_seg.keys()) + [sid for b in self.sentinels for sid in self.sentinels[b]]
+        self.com1, self.aux1 = self.sc.commit(h1_ids)
+        self.com2, self.aux2 = self.sc.commit(h2_ids)
         self.Lambda = 0.0
         self.t.setup += time.perf_counter() - s
 
     # ---- Phase 2: Tag and outsource -------------------------------------
-    def _tag(self, idb, owner_share, partner_share, partner_pub):
-        elt = self.doprf.eval(idb, owner_share, partner_share, partner_pub)
-        return tag_bytes(elt)
+    def _tag(self, idb, owner_share, partner_share, partner_pub, aux, com):
+        tag, A, b, blinded = self.doprf.eval(idb, owner_share, partner_share,
+                                             partner_pub)
+        # membership path + linkage proof, verified holder-to-holder
+        proof = self.sc.prove(aux, idb, b, blinded)
+        if not self.sc.vrfy(com, blinded, proof):
+            raise ValueError("membership/linkage proof failed (injection)")
+        return tag_bytes(tag)
 
     def tag_H1(self, U1_vals):
         """H1: for each id, upload (t, [rho+g*2^L], [alpha*rho], [1+g*2^L], [alpha])."""
@@ -87,11 +81,8 @@ class Clasp:
         items = list(U1_vals.items()) + [(sid, 0) for b in self.sentinels
                                           for sid in self.sentinels[b]]
         for idb, rho in items:
-            t = self._tag(idb, self.doprf.k1, self.doprf.k2, self.doprf.K2)
-            # real membership proof; the aggregator verifies the tag is committed
-            proof = self.sc.prove(self.aux1, t)
-            if not self.sc.vrfy(self.com1, t, proof):
-                raise ValueError("H1 tag not in committed set (injection)")
+            t = self._tag(idb, self.doprf.k1, self.doprf.k2, self.doprf.K2,
+                          self.aux1, self.com1)
             gt = g_kappa(self.kappa, t, self.p.G)
             store.append((
                 t,
@@ -113,10 +104,8 @@ class Clasp:
             for sid in self.sentinels[b]:
                 items.append((sid, b))
         for idb, b in items:
-            t = self._tag(idb, self.doprf.k2, self.doprf.k1, self.doprf.K1)
-            proof = self.sc.prove(self.aux2, t)
-            if not self.sc.vrfy(self.com2, t, proof):
-                raise ValueError("H2 tag not in committed set (injection)")
+            t = self._tag(idb, self.doprf.k2, self.doprf.k1, self.doprf.K1,
+                          self.aux2, self.com2)
             gt = g_kappa(self.kappa, t, self.p.G)
             seglists[b].append((t, self.ahe.enc((-gt) % self.ahe.plaintext_modulus)))
         for b in seglists:
@@ -148,11 +137,10 @@ class Clasp:
                 as_ct = self.ahe.add_fast(as_ct, macp)
                 c_ct = self.ahe.add_fast(c_ct, cntp)
                 ac_ct = self.ahe.add_fast(ac_ct, alp)
-            # add_ciphertexts already re-randomizes (samples fresh r from
-            # encrypt_randomness_bound), so no separate refresh is needed.
             s_ct = self.ahe.add_fast(s_ct, R)
             c_ct = self.ahe.add_fast(c_ct, R)
-            # re-randomize each released ciphertext exactly once
+            # add_ciphertexts already re-randomizes; refresh each released
+            # ciphertext exactly once (partial sums are never revealed)
             out[b] = (self.ahe.refresh(s_ct), self.ahe.refresh(as_ct),
                       self.ahe.refresh(c_ct), self.ahe.refresh(ac_ct))
         self.t.aggregate += time.perf_counter() - s
